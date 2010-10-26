@@ -40,6 +40,7 @@ from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, Dat
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapper, sessionmaker, relationship
 from actions import actions
+from sqlalchemy.sql.expression import desc
 
 log = logging.getLogger(__name__)
 
@@ -261,7 +262,7 @@ class DBFSHandler(dav_interface):
         if obj.type == 0:
             sess = self.Session()
             # @type content Content
-            content = sess.query(Content).filter_by(object_id=obj.id).order_by(Content.revision).first()
+            content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
             sess.close()
 
             if range == None:
