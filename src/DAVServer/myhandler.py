@@ -41,6 +41,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapper, sessionmaker, relationship
 from actions import actions
 from sqlalchemy.sql.expression import desc
+import DAVServer
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ Base = declarative_base()
 
 
 class ActionRestrict(Base):
-    __tablename__='Users'
+    __tablename__='Restrictions'
     id          = Column(Integer, primary_key=True)
     actor_id    = Column(Integer)
     actor_type  = Column(Integer)    
@@ -75,32 +76,50 @@ class ActionRestrict(Base):
 
 # user data
 user_group = Table(
-    'UserGroup', Base.metadata,    
-    Column('user_id', Integer, ForeignKey('User.id')),
+    'UserGroups', Base.metadata,    
+    Column('user_id', Integer, ForeignKey('Users.id')),
     Column('group_id', Integer, ForeignKey('Groups.id'))
+    )
+
+group_directory = Table(
+    'GroupDirectories', Base.metadata,    
+    Column('object_id', Integer, ForeignKey('TreeObjects.id')),
+    Column('group_id', Integer, ForeignKey('Groups.id'))
+    )
+
+user_directory = Table(
+    'UserDirectories', Base.metadata,    
+    Column('object_id', Integer, ForeignKey('TreeObjects.id')),
+    Column('user_id', Integer, ForeignKey('Users.id'))
     )
             
 class User(Base):
-    __tablename__='User'
+    __tablename__='Users'
     id          = Column(Integer, primary_key=True)
     login       = Column(String)
     password    = Column(String)
     full_name   = Column(String)
     groups      = relationship("Group", secondary=user_group, backref='User')
+    directories = relationship("TreeObject", secondary=user_directory, backref='User')
+    is_deleted  = Column(Boolean,nullable=False)
     
-    def __init__(self, login, password, full_name):
+    def __init__(self, login, password, full_name, is_deleted=False):
         self.login = login
         self.password = password
         self.full_name = full_name
+        self.is_deleted = is_deleted
     
 
 class Group(Base):
     __tablename__='Groups'
     id          = Column(Integer, primary_key=True)    
-    name = Column(String)
-    users      = relationship("User", secondary=user_group, backref='Groups')
-    def __init__(self, name):
+    name        = Column(String)
+    users       = relationship("User", secondary=user_group, backref='Group')
+    directories = relationship("TreeObject", secondary=group_directory, backref='Group')
+    is_deleted  = Column(Boolean, nullable=False)
+    def __init__(self, name, is_deleted=False):
         self.name=name
+        self.is_deleted = is_deleted
 
 #content
 class Content(Base):
@@ -111,7 +130,7 @@ class Content(Base):
     revision  = Column(Integer)
     content   = Column(String)
     mod_time  = Column(Float)
-
+    is_deleted  = Column(Boolean)
 
     def __init__(self, revision, content, tree_object, mod_time=time.time()):
         self.revision   = revision
@@ -135,9 +154,13 @@ class TreeObject(Base):
     path    = Column(String)
     mod_time = Column(Float)
     creat_time = Column(Float)
-
+    is_deleted  = Column(Boolean, nullable=False)
+    
+    TYPE_COLLECTION = 1
+    TYPE_FILE       = 0
+    
     def __init__(self, name, type, parent, owner, group, size, content, path,
-        creat_time=time.time(), mod_time=time.time()):
+        creat_time=time.time(), mod_time=time.time(),is_deleted=False):
         self.name      = name
         self.type      = type
         self.parent    = parent
@@ -148,6 +171,7 @@ class TreeObject(Base):
         self.path      = path
         self.mod_time  = mod_time
         self.creat_time= creat_time
+        self.is_deleted= is_deleted
 
     def __repr__(self):
         return "<TreeObject('%s','%s','%s','%s','%s','%s','%s', '%s')>" % (
@@ -179,7 +203,7 @@ class DBFSHandler(dav_interface):
         """Documentation"""
         sess = self.Session()
         
-        if self.engine.has_table('User') == False :
+        if self.engine.has_table('Users') == False :
             self.metadata.create_all(self.engine)
             
             #create default objects
@@ -190,11 +214,11 @@ class DBFSHandler(dav_interface):
             sess.commit()
             
             #default tree_object
-            root_element=TreeObject("/",1,None,root.id,0,0,0,'/')
+            root_element=TreeObject("/",TreeObject.TYPE_COLLECTION,None,root.id,0,0,0,'/')
             sess.add(root_element)
             sess.commit()
             
-            sess.add(ActionRestrict(root.id, '1', root_element.id, actions['ALL']))            
+            sess.add(ActionRestrict(root.id, 1, root_element.id, actions['ALL']))            
             #
                         
             sess.commit()
@@ -226,7 +250,7 @@ class DBFSHandler(dav_interface):
         #get object id
         element=None
         if fileloc != '':
-            element = sess.query(TreeObject).filter_by(path=fileloc).first()
+            element = sess.query(TreeObject).filter_by(path=fileloc, is_deleted=False).first()
         else :
             element = sess.query(TreeObject).filter_by(id='1').first()
 
@@ -245,21 +269,36 @@ class DBFSHandler(dav_interface):
 
     def get_childs(self,uri):
         """ return the child objects as self.baseuris for the given URI """
-        # @type obj TreeObject
         obj=self.uri2obj(uri)
         sess = self.Session()
         filelist = []
-       
-        for elt in sess.query(TreeObject).filter_by(parent=obj.id).order_by(TreeObject.name):
-            print(elt.name)
-            filelist.append(self.object2uri(elt))
+        
+        self.User = sess.merge(self.User)
+        # handle root entity
+        # get all directories which append to
+        # user and user groups and add them as content of / directory
+        # disallow adding files to / directory
+        # if uri isn't point to / just get content of directory
+        if obj.path == '/':
+            for d in self.User.directories:
+                if d.type == TreeObject.TYPE_COLLECTION:
+                    filelist.append(self.object2uri(d))
+            
+            for g in self.User.groups:
+                for d in g.directories:
+                    if d.type == TreeObject.TYPE_COLLECTION:
+                        filelist.append(self.object2uri(d))
+        else:
+            for elt in sess.query(TreeObject).filter_by(parent=obj.id).order_by(TreeObject.name):
+                print(elt.name)
+                filelist.append(self.object2uri(elt))
 
         return filelist
 
     def get_data(self,uri, range = None):
         """ return the content of an object """
         obj=self.uri2obj(uri)
-        if obj.type == 0:
+        if obj.type == TreeObject.TYPE_FILE:
             sess = self.Session()
             # @type content Content
             content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
@@ -267,6 +306,8 @@ class DBFSHandler(dav_interface):
 
             if range == None:
                 return base64.b64decode(content.content)
+            else:
+                raise NotImplementedError
 
         raise DAV_Error
 
@@ -275,9 +316,9 @@ class DBFSHandler(dav_interface):
     def _get_dav_resourcetype(self,uri):
         """ return type of object """        
         obj=self.uri2obj(uri)
-        if obj.type == 0:
+        if obj.type == TreeObject.TYPE_FILE:
             return OBJECT
-        elif  obj.type == 1:
+        elif  obj.type == TreeObject.TYPE_COLLECTION:
             return COLLECTION
 
         raise DAV_NotFound
@@ -319,7 +360,7 @@ class DBFSHandler(dav_interface):
     def put(self, uri, data, content_type=None):
         """ put the object into the filesystem """
         if self.User == None:
-            raise DAV_Error
+            raise DAV_Error( 401)
         
         sess = self.Session()
         
@@ -328,9 +369,10 @@ class DBFSHandler(dav_interface):
         path = urlparse.urlparse(uri)[2]
         path_array = path.split('/')
         name = path_array[-1]
-        parent_path = string.join(path_array[:-1],'/')
-        if parent_path == '':
-            parent_path='/'
+        parent_path = string.join(path_array[:-1],'/')+'/'
+        if parent_path == '':            
+            raise DAV_Forbidden
+        
         parent = sess.query(TreeObject).filter_by(path=parent_path).first()
 
         if parent == None :
@@ -340,17 +382,20 @@ class DBFSHandler(dav_interface):
         
         if obj == None:
             if self.User.groups == []:
-                obj = TreeObject(name,0,parent.id,self.User.id,None,0,0,path)
+                obj = TreeObject(name,TreeObject.TYPE_FILE,parent.id,self.User.id,None,0,0,path)
             else:                
-                obj = TreeObject(name,0,parent.id,self.User.id,self.User.groups[0].id,0,0,path)
+                obj = TreeObject(name,TreeObject.TYPE_FILE,parent.id,self.User.id,self.User.groups[0].id,0,0,path)
         
             sess.add(obj)
-            sess.commit()
-            sess.add(ActionRestrict(self.User.id, '1', obj.id, actions['ALL']))
-            if parent.group != None:
-                sess.add(ActionRestrict(self.User.id, '2', parent.group, actions['ALL']))
             
-        
+            sess.commit()
+            
+            rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=parent.id )
+            
+            for r in rest:
+                sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
+                
+            sess.commit()
         
         content = sess.query(Content).filter_by(object_id=obj.id).order_by(Content.revision).first()
 
@@ -376,24 +421,34 @@ class DBFSHandler(dav_interface):
         
         path_array = path.split('/')
         name = path_array[-2]
-        parent_path = string.join(path_array[:-2])
-        if parent_path == '':
+        parent_path = string.join(path_array[:-2],'/')+'/'
+        if parent_path == '':            
             parent_path='/'
+        
         parent = sess.query(TreeObject).filter_by(path=parent_path).first()
 
         if parent == None :
             sess.close()
             raise DAV_Error
         
-        if self.User.groups == []:
-            obj = TreeObject(name,1,parent.id,self.User.id,None,0,0,path)
-        else:                
-            obj = TreeObject(name,1,parent.id,self.User.id,self.User.groups[0].id,0,0,path)      
+        rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=parent.id )
         
+        if self.User.groups == []:
+            obj = DAVServer.myhandler.TreeObject(name,TreeObject.TYPE_COLLECTION,parent.id,self.User.id,None,0,0,path)
+        else:                
+            obj = DAVServer.myhandler.TreeObject(name,TreeObject.TYPE_COLLECTION,parent.id,self.User.id,self.User.groups[0].id,0,0,path)      
+        
+        sess.add(obj)        
+        
+        if parent_path=='/':
+            self.User.directories.append(obj)
 
-        sess.add(obj)
         sess.commit()
         
+        for r in rest:
+            sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
+            
+        sess.commit()        
 
     ### ?? should we do the handler stuff for DELETE, too ?
     ### (see below)

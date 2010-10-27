@@ -53,7 +53,7 @@ class PROPFIND:
         self.default_ns=None
         self._dataclass=dataclass
         self._depth=str(depth)
-        self._uri=uri.rstrip('/')
+        self._uri=uri#.rstrip('/')
         self._has_body=None    # did we parse a body?
 
         if dataclass.verbose:

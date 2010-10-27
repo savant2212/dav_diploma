@@ -151,7 +151,11 @@ class AuthRequestHandler:
             return
 
         method = getattr(self, mname)
-        method()
+        
+        try:
+            method()
+        except NotImplementedError:
+            self.send_error(501, "Not implemented method (%s)" % `command`)
 
         self._flush()
 

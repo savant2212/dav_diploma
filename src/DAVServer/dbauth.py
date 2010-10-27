@@ -63,7 +63,11 @@ class DbAuthHandler(DAVRequestHandler):
         #when creating object, find parent
         
         if obj == None:
-            p_path=string.join(self.path.split('/')[:-1],'/')
+            if uri[-1] == '/':
+                p_path=string.join(self.path.split('/')[:-2],'/')+'/'
+            else:
+                p_path=string.join(self.path.split('/')[:-1],'/')+'/'
+                
             uri=urlparse.urljoin(self.get_baseuri(self.IFACE_CLASS), p_path)
             uri=urllib.unquote(uri)
             obj = self.IFACE_CLASS.uri2obj(uri)
