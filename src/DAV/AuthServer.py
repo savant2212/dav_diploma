@@ -137,7 +137,7 @@ class AuthRequestHandler:
                     if not self.get_userinfo(user,pw,command):
                         self.send_autherror(401,"Authorization Required"); return
                     if not self.get_command_allow(user,command ):
-                        self.send_autherror(403,"Forbidden"); return
+                        self.send_response(403,"Forbidden"); return
                 except:    
                     self.send_response(500, 'Invalid action')
             except:

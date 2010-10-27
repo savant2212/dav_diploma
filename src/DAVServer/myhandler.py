@@ -15,7 +15,7 @@
 #Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 #MA 02111-1307, USA
 
-from DAV.errors import DAV_Error
+from DAV.errors import DAV_Error, DAV_NotFound
 from DAV.errors import DAV_NotFound
 from logging import debug
 import sys
@@ -42,6 +42,7 @@ from sqlalchemy.orm import mapper, sessionmaker, relationship
 from actions import actions
 from sqlalchemy.sql.expression import desc
 import DAVServer
+from base64 import b64decode
 
 log = logging.getLogger(__name__)
 
@@ -131,12 +132,14 @@ class Content(Base):
     content   = Column(String)
     mod_time  = Column(Float)
     is_deleted  = Column(Boolean)
-
-    def __init__(self, revision, content, tree_object, mod_time=time.time()):
+    mime_type = Column(String)
+    
+    def __init__(self, revision, content, tree_object, mime_type='application/octet-stream',mod_time=time.time()):
         self.revision   = revision
         self.content    = content
         self.object_id  = tree_object
-        mod_time        = mod_time
+        self.mod_time   = mod_time
+        self.mime_type  = mime_type
 
     def __repr__(self):
         return "<Content('%s','%s', '%s')>" % (self.tree_object, self.content, self.revision)
@@ -289,7 +292,7 @@ class DBFSHandler(dav_interface):
                     if d.type == TreeObject.TYPE_COLLECTION:
                         filelist.append(self.object2uri(d))
         else:
-            for elt in sess.query(TreeObject).filter_by(parent=obj.id).order_by(TreeObject.name):
+            for elt in sess.query(TreeObject).filter_by(parent=obj.id, is_deleted=False).order_by(TreeObject.name):
                 print(elt.name)
                 filelist.append(self.object2uri(elt))
 
@@ -355,7 +358,14 @@ class DBFSHandler(dav_interface):
 
     def _get_dav_getcontenttype(self,uri):
         """ find out yourself! """
-        return 'application/octet-stream'
+        obj=self.uri2obj(uri)
+        sess=self.Session()
+        content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
+        sess.close()
+        if content.mime_type == '':
+            return 'application/octet-stream'
+        else:
+            return content.mime_type
 
     def put(self, uri, data, content_type=None):
         """ put the object into the filesystem """
@@ -397,13 +407,13 @@ class DBFSHandler(dav_interface):
                 
             sess.commit()
         
-        content = sess.query(Content).filter_by(object_id=obj.id).order_by(Content.revision).first()
+        content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
 
         if content == None:
-            content = Content(1,base64.b64encode(data), obj.id)
+            content = Content(1,base64.b64encode(data), obj.id, content_type)
         else:
             
-            content = Content(content.revision + 1,base64.b64encode(data), obj.id)
+            content = Content(content.revision + 1,base64.b64encode(data), obj.id, content_type)
 
         sess.add(content)
         sess.commit()
@@ -455,11 +465,23 @@ class DBFSHandler(dav_interface):
 
     def rmcol(self,uri):
         """ delete a collection """
-        raise NotImplementedError
+        return self.rm(uri)
 
     def rm(self,uri):
         """ delete a normal resource """
-        raise NotImplementedError
+        sess = self.Session()
+        
+        self.User = sess.merge(self.User)
+        obj = self.uri2obj(uri)
+        
+        if obj == None:
+            raise DAV_NotFound
+        
+        obj.is_deleted = True
+        sess.add(obj)
+        sess.commit()
+        
+        return 204
 
     ###
     ### DELETE handlers (examples)
@@ -475,7 +497,7 @@ class DBFSHandler(dav_interface):
         or None if everything's ok
 
         """
-        raise NotImplementedError
+        return delone(self,uri)
 
     def deltree(self,uri):
         """ delete a collection 
@@ -484,7 +506,7 @@ class DBFSHandler(dav_interface):
         uri:error_code
         or None if everything's ok
         """
-        raise NotImplementedError
+        return deltree(self,uri)
         
 
 
@@ -532,6 +554,8 @@ class DBFSHandler(dav_interface):
         """ copy a resource from src to dst """
         sess=self.Session()
         source = self.uri2obj(src)
+        content = sess.query(Content).filter_by(object_id=source.id).order_by(desc(Content.revision)).first()
+        self.put(dst, b64decode(content.content), content.mime_type)
         
 
     def copycol(self, src, dst):
@@ -552,4 +576,4 @@ class DBFSHandler(dav_interface):
     def is_collection(self,uri):
         """ test if the given uri is a collection """
 
-        return self._get_dav_resourcetype(self,uri) == COLLECTION
+        return self._get_dav_resourcetype(uri) == COLLECTION
