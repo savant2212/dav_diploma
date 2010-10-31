@@ -12,6 +12,7 @@ from actions import actions
 from sqlalchemy.sql.expression import desc
 from Entity import ActionRestrict, User, TreeObject, Content, Group, Base
 from base64 import b64decode
+import base64
 
 class Test(unittest.TestCase):
     Base = declarative_base()
@@ -71,7 +72,23 @@ class Test(unittest.TestCase):
         
         pass
     
-
+    def testTreeObjects(self):
+        root_element=TreeObject("/",TreeObject.TYPE_COLLECTION,None,0,0,0,0,'/')
+        
+        
+        dir_element=TreeObject("dir",TreeObject.TYPE_COLLECTION,None,0,0,0,0,'/dir/')
+        
+        obj = TreeObject('file',TreeObject.TYPE_FILE,dir_element,0,None,0,0,'/dir/file')        
+        obj.revisions.append(Content(1,base64.b64encode("test234__==_)%#@#%@^"), obj, ''))
+        obj.revisions.append(Content(2,base64.b64encode("test2345__==_)%#@#%@^"), obj, ''))
+        obj.revisions.append(Content(3,base64.b64encode("test23456__==_)%#@#%@^"), obj, ''))
+        dir_element.nodes.append(obj)
+        root_element.nodes.append(dir_element)
+        
+        self.sess.add(root_element)
+        self.sess.commit()
+        
+        pass
 if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testDbTest']
+    #import sys;sys.argv = ['', 'Test.testDbTest', 'Test.testTreeObjects']
     unittest.main()

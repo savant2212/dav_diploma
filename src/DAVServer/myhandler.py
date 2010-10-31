@@ -288,9 +288,9 @@ class DBFSHandler(dav_interface):
         
         if obj == None:
             if self.User.groups == []:
-                obj = TreeObject(name,TreeObject.TYPE_FILE,parent.id,self.User.id,None,0,0,path)
+                obj = TreeObject(name,TreeObject.TYPE_FILE,parent,self.User.id,None,0,0,path)
             else:                
-                obj = TreeObject(name,TreeObject.TYPE_FILE,parent.id,self.User.id,self.User.groups[0].id,0,0,path)
+                obj = TreeObject(name,TreeObject.TYPE_FILE,parent,self.User.id,self.User.groups[0].id,0,0,path)
         
             sess.add(obj)
             
