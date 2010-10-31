@@ -3,6 +3,7 @@
 	<name>davstorage</name>
 	<comment></comment>
 	<projects>
+		<project>daventities</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

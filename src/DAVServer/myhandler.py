@@ -43,6 +43,7 @@ from actions import actions
 from sqlalchemy.sql.expression import desc
 import DAVServer
 from base64 import b64decode
+from Entity import ActionRestrict, User, TreeObject, Content, Group, Base
 
 log = logging.getLogger(__name__)
 
@@ -54,132 +55,6 @@ try:
     MAGIC_AVAILABLE = True
 except ImportError:
     pass
-
-Base = declarative_base()
-
-
-
-class ActionRestrict(Base):
-    __tablename__='Restrictions'
-    id          = Column(Integer, primary_key=True)
-    actor_id    = Column(Integer)
-    actor_type  = Column(Integer)    
-    object_id   = Column(Integer)
-    action   = Column(Integer)    
-
-    def __init__(self, actor_id, actor_type, object_id, action):
-        self.actor_id = actor_id
-        self.actor_type = actor_type
-        self.object_id = object_id
-        self.action = action
-        
-     
-
-# user data
-user_group = Table(
-    'UserGroups', Base.metadata,    
-    Column('user_id', Integer, ForeignKey('Users.id')),
-    Column('group_id', Integer, ForeignKey('Groups.id'))
-    )
-
-group_directory = Table(
-    'GroupDirectories', Base.metadata,    
-    Column('object_id', Integer, ForeignKey('TreeObjects.id')),
-    Column('group_id', Integer, ForeignKey('Groups.id'))
-    )
-
-user_directory = Table(
-    'UserDirectories', Base.metadata,    
-    Column('object_id', Integer, ForeignKey('TreeObjects.id')),
-    Column('user_id', Integer, ForeignKey('Users.id'))
-    )
-            
-class User(Base):
-    __tablename__='Users'
-    id          = Column(Integer, primary_key=True)
-    login       = Column(String)
-    password    = Column(String)
-    full_name   = Column(String)
-    groups      = relationship("Group", secondary=user_group, backref='User')
-    directories = relationship("TreeObject", secondary=user_directory, backref='User')
-    is_deleted  = Column(Boolean,nullable=False)
-    
-    def __init__(self, login, password, full_name, is_deleted=False):
-        self.login = login
-        self.password = password
-        self.full_name = full_name
-        self.is_deleted = is_deleted
-    
-
-class Group(Base):
-    __tablename__='Groups'
-    id          = Column(Integer, primary_key=True)    
-    name        = Column(String)
-    users       = relationship("User", secondary=user_group, backref='Group')
-    directories = relationship("TreeObject", secondary=group_directory, backref='Group')
-    is_deleted  = Column(Boolean, nullable=False)
-    def __init__(self, name, is_deleted=False):
-        self.name=name
-        self.is_deleted = is_deleted
-
-#content
-class Content(Base):
-    __tablename__= 'Contents'
-
-    id        = Column(Integer, primary_key=True)
-    object_id = Column(Integer)
-    revision  = Column(Integer)
-    content   = Column(String)
-    mod_time  = Column(Float)
-    is_deleted  = Column(Boolean)
-    mime_type = Column(String)
-    
-    def __init__(self, revision, content, tree_object, mime_type='application/octet-stream',mod_time=time.time()):
-        self.revision   = revision
-        self.content    = content
-        self.object_id  = tree_object
-        self.mod_time   = mod_time
-        self.mime_type  = mime_type
-
-    def __repr__(self):
-        return "<Content('%s','%s', '%s')>" % (self.tree_object, self.content, self.revision)
-
-
-class TreeObject(Base):
-    __tablename__= 'TreeObjects'
-    id      = Column(Integer, primary_key=True)
-    name    = Column(String)
-    type    = Column(Integer)
-    parent  = Column(Integer)
-    owner   = Column(Integer)
-    group   = Column(Integer)
-    size    = Column(Integer)    
-    path    = Column(String)
-    mod_time = Column(Float)
-    creat_time = Column(Float)
-    is_deleted  = Column(Boolean, nullable=False)
-    
-    TYPE_COLLECTION = 1
-    TYPE_FILE       = 0
-    
-    def __init__(self, name, type, parent, owner, group, size, content, path,
-        creat_time=time.time(), mod_time=time.time(),is_deleted=False):
-        self.name      = name
-        self.type      = type
-        self.parent    = parent
-        self.owner     = owner
-        self.group     = group
-        self.size      = size
-        self.content   = content
-        self.path      = path
-        self.mod_time  = mod_time
-        self.creat_time= creat_time
-        self.is_deleted= is_deleted
-
-    def __repr__(self):
-        return "<TreeObject('%s','%s','%s','%s','%s','%s','%s', '%s')>" % (
-         self.name, self.type, self.parent, self.owner, self.group, self.size,
-         self.content, self.path)
 
 class DBFSHandler(dav_interface):
     """ 
@@ -243,10 +118,12 @@ class DBFSHandler(dav_interface):
         """ Sets the base uri """
 
         self.baseuri = uri
-        
-    def uri2obj(self,uri):
+    def uri2obj(self,uri, session = None):
         """ map uri in baseuri and local part """
-        sess = self.Session()
+        if session == None:
+            sess = session
+        else:
+            sess = self.Session()
 
         uparts=urlparse.urlparse(uri)
         fileloc=uparts[2]        
@@ -256,8 +133,9 @@ class DBFSHandler(dav_interface):
             element = sess.query(TreeObject).filter_by(path=fileloc, is_deleted=False).first()
         else :
             element = sess.query(TreeObject).filter_by(id='1').first()
-
-        sess.close()
+        
+        if session == None:
+            sess.close()
 
         if element == None:
             return None
@@ -271,17 +149,24 @@ class DBFSHandler(dav_interface):
 
 
     def get_childs(self,uri):
-        """ return the child objects as self.baseuris for the given URI """
-        obj=self.uri2obj(uri)
-        sess = self.Session()
+        """        
+        return the child objects as self.baseuris for the given URI
+        
+        handle root entity
+        get all directories which append to
+        user and user groups and add them as content of / directory
+        adding files to / directory disallowed
+        
+        if uri isn't point to / get content of directory
+        and if directory belongs to group, add available to user
+        subgroup directories 
+        """
+        sess = self.Session()        
+        obj=self.uri2obj(uri, sess)        
         filelist = []
         
         self.User = sess.merge(self.User)
-        # handle root entity
-        # get all directories which append to
-        # user and user groups and add them as content of / directory
-        # disallow adding files to / directory
-        # if uri isn't point to / just get content of directory
+        
         if obj.path == '/':
             for d in self.User.directories:
                 if d.type == TreeObject.TYPE_COLLECTION:
@@ -292,26 +177,35 @@ class DBFSHandler(dav_interface):
                     if d.type == TreeObject.TYPE_COLLECTION:
                         filelist.append(self.object2uri(d))
         else:
-            for elt in sess.query(TreeObject).filter_by(parent=obj.id, is_deleted=False).order_by(TreeObject.name):
-                print(elt.name)
+            if self._is_uri_group_directory(uri):
+                for d in self._get_group_directories(uri):
+                    filelist.append(self.object2uri(d))
+                
+            for elt in obj.nodes:                
                 filelist.append(self.object2uri(elt))
-
+        
+        sess.close()
+        
         return filelist
 
     def get_data(self,uri, range = None):
         """ return the content of an object """
-        obj=self.uri2obj(uri)
-        if obj.type == TreeObject.TYPE_FILE:
-            sess = self.Session()
-            # @type content Content
-            content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
+        sess = self.Session()
+        obj=self.uri2obj(uri, sess)
+        
+        if obj.type == TreeObject.TYPE_FILE:            
+            
+            content = obj.last_revision
+            
             sess.close()
-
+            
             if range == None:
                 return base64.b64decode(content.content)
             else:
                 raise NotImplementedError
-
+        
+        sess.close()
+        
         raise DAV_Error
 
 
@@ -329,14 +223,13 @@ class DBFSHandler(dav_interface):
     def _get_dav_displayname(self,uri):
 
         obj = self.uri2obj(uri)
-        # @type obj TreeObject
         return obj.name
 
     def _get_dav_getcontentlength(self,uri):
         """ return the content length of an object """
-        obj=self.uri2obj(uri)
         sess=self.Session()
-        content = sess.query(Content).filter_by(object_id=obj.id).order_by(Content.revision).first()
+        obj=self.uri2obj(uri, sess)        
+        content = obj.last_revision
         sess.close()
         data = base64.b64decode(content.content)
         return data.length
@@ -358,10 +251,13 @@ class DBFSHandler(dav_interface):
 
     def _get_dav_getcontenttype(self,uri):
         """ find out yourself! """
-        obj=self.uri2obj(uri)
         sess=self.Session()
-        content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
+        
+        obj=self.uri2obj(uri, sess)        
+        content = obj.last_revision
+        
         sess.close()
+        
         if content.mime_type == '':
             return 'application/octet-stream'
         else:
@@ -370,7 +266,7 @@ class DBFSHandler(dav_interface):
     def put(self, uri, data, content_type=None):
         """ put the object into the filesystem """
         if self.User == None:
-            raise DAV_Error( 401)
+            raise DAV_Error( 401 )
         
         sess = self.Session()
         
@@ -388,7 +284,7 @@ class DBFSHandler(dav_interface):
         if parent == None :
             raise DAV_Error
 
-        obj = self.uri2obj(uri)
+        obj = self.uri2obj(uri, sess)
         
         if obj == None:
             if self.User.groups == []:
@@ -407,13 +303,12 @@ class DBFSHandler(dav_interface):
                 
             sess.commit()
         
-        content = sess.query(Content).filter_by(object_id=obj.id).order_by(desc(Content.revision)).first()
+        content = obj.last_revision
 
         if content == None:
-            content = Content(1,base64.b64encode(data), obj.id, content_type)
-        else:
-            
-            content = Content(content.revision + 1,base64.b64encode(data), obj.id, content_type)
+            content = Content(1,base64.b64encode(data), obj, content_type)
+        else:            
+            content = Content(content.revision + 1,base64.b64encode(data), obj, content_type)
 
         sess.add(content)
         sess.commit()
@@ -451,12 +346,15 @@ class DBFSHandler(dav_interface):
         sess.add(obj)        
         
         if parent_path=='/':
-            self.User.directories.append(obj)
+            self.User.directories.append(obj)        
 
         sess.commit()
         
-        for r in rest:
-            sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
+        if parent_path=='/':
+            sess.add(ActionRestrict(self.User.id, '1', obj.id, actions['GET'] | actions['PROPFIND'] | actions['HEAD'] | actions['MKCOL'] | actions['USERINFO'] | actions['OPTIONS'] | actions['PUT'] | actions['LOCK'] | actions['UNLOCK'] | actions['COPY'] | actions['MOVE'] ))            
+        else:
+            for r in rest:
+                sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
             
         sess.commit()        
 
@@ -553,9 +451,10 @@ class DBFSHandler(dav_interface):
     def copy(self,src,dst):
         """ copy a resource from src to dst """
         sess=self.Session()
-        source = self.uri2obj(src)
-        content = sess.query(Content).filter_by(object_id=source.id).order_by(desc(Content.revision)).first()
+        source = self.uri2obj(src, sess)
+        content = source.last_revision
         self.put(dst, b64decode(content.content), content.mime_type)
+        sess.close()
         
 
     def copycol(self, src, dst):
@@ -577,3 +476,27 @@ class DBFSHandler(dav_interface):
         """ test if the given uri is a collection """
 
         return self._get_dav_resourcetype(uri) == COLLECTION
+    
+    def _is_uri_group_directory(self, uri):
+        obj = self.uri2obj(uri)                
+        sess = self.Session()        
+        res = sess.query(Group).filter_by(base_dir=obj)
+        sess.close()
+        
+        return res.count() > 0
+    
+    def _get_group_directories(self, uri):
+        filelist = []
+        sess = self.Session()       
+        obj = self.uri2obj(uri,sess)                
+         
+        res = sess.query(Group).filter_by(base_dir=obj)
+        
+        if res != None:
+            for g in res.subgroups:
+                if g in self.User.groups:
+                    filelist.append(self.object2uri(g.base_dir))
+        
+        sess.close()
+        
+        return filelist
