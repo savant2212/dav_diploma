@@ -89,6 +89,8 @@ class DBFSHandler(dav_interface):
             #default user
             root=User('root', 'root', 'root')            
             sess.add(root)
+            toor=User('toor', 'toor', 'toor')            
+            sess.add(toor)
             sess.commit()
             
             #default tree_object
@@ -97,9 +99,39 @@ class DBFSHandler(dav_interface):
             sess.commit()
             
             sess.add(ActionRestrict(root.id, 1, root_element.id, actions['ALL']))            
+            sess.add(ActionRestrict(toor.id, 1, root_element.id, actions['ALL']))
             #
                         
             sess.commit()
+            
+            #add root group and subgroup. for test
+            grp_base_dir=TreeObject("root_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/')
+            sess.add(grp_base_dir)
+            sess.commit()
+            
+            sess.add(ActionRestrict(root.id, 1, grp_base_dir.id, actions['ALL']))
+            sess.add(ActionRestrict(toor.id, 1, grp_base_dir.id, actions['ALL']))
+            
+            grp = Group("root_grp",grp_base_dir)
+        
+            grp.users.append(root)
+            grp.users.append(toor)
+            
+            sgrp_base_dir=TreeObject("sroot_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/sroot_grp/')
+            sess.add(sgrp_base_dir)
+            sess.commit()
+            
+            sess.add(ActionRestrict(root.id, 1, sgrp_base_dir.id, actions['ALL']))
+            
+            sgrp = Group("sroot_grp",sgrp_base_dir)
+            
+            sgrp.users.append(root)
+            
+            grp.subgroups.append(sgrp)
+            
+            sess.add(grp)
+            sess.commit()
+            
             sess.close()
 
     def setEngine(self, connection_string):
@@ -120,7 +152,7 @@ class DBFSHandler(dav_interface):
         self.baseuri = uri
     def uri2obj(self,uri, session = None):
         """ map uri in baseuri and local part """
-        if session == None:
+        if session != None:
             sess = session
         else:
             sess = self.Session()
@@ -173,9 +205,9 @@ class DBFSHandler(dav_interface):
                     filelist.append(self.object2uri(d))
             
             for g in self.User.groups:
-                for d in g.directories:
-                    if d.type == TreeObject.TYPE_COLLECTION:
-                        filelist.append(self.object2uri(d))
+                #for d in g.base_:
+                if g.parent == None:
+                    filelist.append(self.object2uri(g.base_dir))
         else:
             if self._is_uri_group_directory(uri):
                 for d in self._get_group_directories(uri):
@@ -228,11 +260,14 @@ class DBFSHandler(dav_interface):
     def _get_dav_getcontentlength(self,uri):
         """ return the content length of an object """
         sess=self.Session()
-        obj=self.uri2obj(uri, sess)        
-        content = obj.last_revision
-        sess.close()
-        data = base64.b64decode(content.content)
-        return data.length
+        obj=self.uri2obj(uri, sess)  
+        if obj.type == TreeObject.TYPE_FILE:      
+            content = obj.last_revision
+            sess.close()
+            data = base64.b64decode(content.content)
+            return data.length
+        
+        return '0'
 
     def get_lastmodified(self,uri):
         """ return the last modified date of the object """
@@ -490,12 +525,14 @@ class DBFSHandler(dav_interface):
         sess = self.Session()       
         obj = self.uri2obj(uri,sess)                
          
-        res = sess.query(Group).filter_by(base_dir=obj)
+        res = sess.query(Group).filter_by(base_dir=obj).first()
         
         if res != None:
             for g in res.subgroups:
-                if g in self.User.groups:
-                    filelist.append(self.object2uri(g.base_dir))
+                #if g in self.User.groups:
+                for gp in self.User.groups:
+                    if g.id == gp.id:
+                        filelist.append(g.base_dir)
         
         sess.close()
         
