@@ -44,6 +44,7 @@ from sqlalchemy.sql.expression import desc
 import DAVServer
 from base64 import b64decode
 from Entity import ActionRestrict, User, TreeObject, Content, Group, Base
+from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +162,14 @@ class DBFSHandler(dav_interface):
         fileloc=uparts[2]        
         #get object id
         element=None
+        #if fileloc.find(".history") != -1:
+        #    parts = fileloc.split('/')
+        #    
+        #    if parts[-1] == "":
+        #        element = TreeObject(parts[-2], TreeObject.TYPE_HISTORY, None, self.User, None, 0, None, fileloc)
+        #    else:           
+        #        element = TreeObject(parts[-1], TreeObject.TYPE_REV_FILE, None, self.User, None, 0, None, fileloc)
+        #elif fileloc != '':        
         if fileloc != '':
             element = sess.query(TreeObject).filter_by(path=fileloc, is_deleted=False).first()
         else :
@@ -208,7 +217,7 @@ class DBFSHandler(dav_interface):
                 #for d in g.base_:
                 if g.parent == None:
                     filelist.append(self.object2uri(g.base_dir))
-        else:
+        else:            
             if self._is_uri_group_directory(uri):
                 for d in self._get_group_directories(uri):
                     filelist.append(self.object2uri(d))
@@ -235,7 +244,8 @@ class DBFSHandler(dav_interface):
                 return base64.b64decode(content.content)
             else:
                 raise NotImplementedError
-        
+        elif obj.type == TreeObject.TYPE_REV_FILE:            
+            pass 
         sess.close()
         
         raise DAV_Error
@@ -342,7 +352,10 @@ class DBFSHandler(dav_interface):
 
         if content == None:
             content = Content(1,base64.b64encode(data), obj, content_type)
-        else:            
+        else:
+                        
+            prev = TreeObject("%s_%s$%i" % (name, datetime.fromtimestamp(content.mod_time).strftime("%Y-%m-%d-%H-%M"), content.revision),TreeObject.TYPE_REV_FILE,parent,self.User.id,None,0,0,path)
+            
             content = Content(content.revision + 1,base64.b64encode(data), obj, content_type)
 
         sess.add(content)
@@ -374,11 +387,14 @@ class DBFSHandler(dav_interface):
         rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=parent.id )
         
         if self.User.groups == []:
-            obj = DAVServer.myhandler.TreeObject(name,TreeObject.TYPE_COLLECTION,parent.id,self.User.id,None,0,0,path)
+            obj = TreeObject(name,TreeObject.TYPE_COLLECTION,parent,self.User.id,None,0,0,path)
         else:                
-            obj = DAVServer.myhandler.TreeObject(name,TreeObject.TYPE_COLLECTION,parent.id,self.User.id,self.User.groups[0].id,0,0,path)      
+            obj = TreeObject(name,TreeObject.TYPE_COLLECTION,parent,self.User.id,self.User.groups[0].id,0,0,path)      
+        
+        hist = TreeObject(".history",TreeObject.TYPE_COLLECTION,obj,self.User.id,obj.group,0,0,string.join([path,".history"],'/'))
         
         sess.add(obj)        
+        sess.add(hist)
         
         if parent_path=='/':
             self.User.directories.append(obj)        
@@ -390,6 +406,7 @@ class DBFSHandler(dav_interface):
         else:
             for r in rest:
                 sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
+                sess.add(ActionRestrict(self.User.id, r.actor_type, hist.id, r.action | actions['HISTORY'] ))
             
         sess.commit()        
 
@@ -517,6 +534,9 @@ class DBFSHandler(dav_interface):
         sess = self.Session()        
         res = sess.query(Group).filter_by(base_dir=obj)
         sess.close()
+        
+        if res == None :
+            return False
         
         return res.count() > 0
     
