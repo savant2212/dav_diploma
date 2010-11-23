@@ -39,12 +39,14 @@ from sqlalchemy import create_engine
 from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, DateTime, Float, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import mapper, sessionmaker, relationship
-from actions import actions
-from sqlalchemy.sql.expression import desc
+
 import DAVServer
 from base64 import b64decode
-from Entity import ActionRestrict, User, TreeObject, Content, Group, Base
+from Entity import ActionRestrict, User, TreeObject, Content, Group, Base,\
+    ObjectRevision
 from datetime import datetime
+from actions import *
+
 
 log = logging.getLogger(__name__)
 
@@ -106,29 +108,23 @@ class DBFSHandler(dav_interface):
             sess.commit()
             
             #add root group and subgroup. for test
-            grp_base_dir=TreeObject("root_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/')
+            grp_base_dir= TreeObject("root_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/')
+            hist        = TreeObject(".history",TreeObject.TYPE_COLLECTION,grp_base_dir,0,0,0,0,string.join([grp_base_dir.path[:-1],".history",''],'/'))
+            
             sess.add(grp_base_dir)
+            sess.add(hist)
+            
             sess.commit()
             
             sess.add(ActionRestrict(root.id, 1, grp_base_dir.id, actions['ALL']))
+            sess.add(ActionRestrict(root.id, 1, hist.id, user_hist_acts))
             sess.add(ActionRestrict(toor.id, 1, grp_base_dir.id, actions['ALL']))
+            sess.add(ActionRestrict(toor.id, 1, hist.id, user_hist_acts))
             
             grp = Group("root_grp",grp_base_dir)
         
             grp.users.append(root)
             grp.users.append(toor)
-            
-            sgrp_base_dir=TreeObject("sroot_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/sroot_grp/')
-            sess.add(sgrp_base_dir)
-            sess.commit()
-            
-            sess.add(ActionRestrict(root.id, 1, sgrp_base_dir.id, actions['ALL']))
-            
-            sgrp = Group("sroot_grp",sgrp_base_dir)
-            
-            sgrp.users.append(root)
-            
-            grp.subgroups.append(sgrp)
             
             sess.add(grp)
             sess.commit()
@@ -233,19 +229,20 @@ class DBFSHandler(dav_interface):
         """ return the content of an object """
         sess = self.Session()
         obj=self.uri2obj(uri, sess)
-        
-        if obj.type == TreeObject.TYPE_FILE:            
+        print("getdata call\n")
+        if obj.type == TreeObject.TYPE_FILE or obj.type == TreeObject.TYPE_REV_FILE:            
             
             content = obj.last_revision
             
+            data = base64.b64decode(content.content.content)
+            print("data recv: %s\n"%(data))
             sess.close()
             
             if range == None:
-                return base64.b64decode(content.content)
+                return data 
             else:
                 raise NotImplementedError
-        elif obj.type == TreeObject.TYPE_REV_FILE:            
-            pass 
+        
         sess.close()
         
         raise DAV_Error
@@ -271,10 +268,10 @@ class DBFSHandler(dav_interface):
         """ return the content length of an object """
         sess=self.Session()
         obj=self.uri2obj(uri, sess)  
-        if obj.type == TreeObject.TYPE_FILE:      
-            content = obj.last_revision
+        if obj.type == TreeObject.TYPE_FILE:                  
+            content = obj.last_revision            
+            data = base64.b64decode(content.content.content)
             sess.close()
-            data = base64.b64decode(content.content)
             return data.length
         
         return '0'
@@ -348,17 +345,40 @@ class DBFSHandler(dav_interface):
                 
             sess.commit()
         
-        content = obj.last_revision
-
-        if content == None:
-            content = Content(1,base64.b64encode(data), obj, content_type)
+        obj.mod_time = time.time()
+        old_rev = obj.last_revision
+        rev = ObjectRevision()
+        rev.mod_time = obj.mod_time
+        
+        if old_rev == None:
+            rev.revision = 1            
         else:
-                        
-            prev = TreeObject("%s_%s$%i" % (name, datetime.fromtimestamp(content.mod_time).strftime("%Y-%m-%d-%H-%M"), content.revision),TreeObject.TYPE_REV_FILE,parent,self.User.id,None,0,0,path)
+            hist = self.uri2obj(string.join([parent.path[:-1],".history",""],'/'), sess)
+            rev.revision = old_rev.revision + 1           
             
-            content = Content(content.revision + 1,base64.b64encode(data), obj, content_type)
-
-        sess.add(content)
+            if hist != None:
+                prev_rev = ObjectRevision()
+                prev_rev.content = old_rev.content
+                prev_rev.revision = old_rev.revision
+                prev_rev.mod_time = old_rev.mod_time
+                
+                prev_name = "%s_%s" % (name, datetime.fromtimestamp(old_rev.mod_time).strftime("%Y-%m-%d-%H-%M-%S"))    
+                prev = TreeObject(prev_name,TreeObject.TYPE_REV_FILE,hist,self.User.id,None,0,0,string.join([hist.path[:-1],prev_name],'/'))
+                
+                sess.add(prev)
+                prev.revisions.append(prev_rev)                
+                
+                sess.commit() 
+                rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=hist.id )       
+                sess.add(ActionRestrict(self.User.id, '1', prev.id, user_hist_acts ))
+                
+                sess.commit()
+        
+        rev.content = Content(base64.b64encode(data), content_type) 
+        
+        obj.revisions.append(rev)                
+        
+        sess.add(obj)        
         sess.commit()
         sess.close()
 
@@ -505,6 +525,7 @@ class DBFSHandler(dav_interface):
         sess=self.Session()
         source = self.uri2obj(src, sess)
         content = source.last_revision
+        
         self.put(dst, b64decode(content.content), content.mime_type)
         sess.close()
         
