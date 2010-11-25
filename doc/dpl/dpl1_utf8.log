@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.1415926-1.40.11 (TeX Live 2010/Arch Linux) (format=latex 2010.11.23)  24 NOV 2010 18:13
+This is pdfTeX, Version 3.1415926-1.40.11 (TeX Live 2010/Arch Linux) (format=latex 2010.11.11)  25 NOV 2010 03:07
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1187,20 +1187,18 @@ Overfull \hbox (3.84099pt too wide) in paragraph at lines 123--126
 ?ние об^^?ра^^?зо^^?ва^^?тель^^?ных и вос^^?пи^^?та^^?тель^^?ных услуг,
  []
 
-[8]
-File: pictures/org_custom.eps Graphic file (type eps)
- <pictures/org_custom.eps> [9] [10] [11] [12]
+[8] [9] [10] [11] [12]
 File: pictures/DB.eps Graphic file (type eps)
  <pictures/DB.eps> [13
 
-]
-[14] [15
+] [14] [15
 
 ] [16
 
 ] [17
 
-] AED: lastpage setting LastPage 
+]
+AED: lastpage setting LastPage 
 [18
 
 ]
@@ -1219,12 +1217,12 @@ LaTeX Warning: There were multiply-defined labels.
 
  ) 
 Here is how much of TeX's memory you used:
- 8654 strings out of 493739
- 119561 string characters out of 3148819
+ 8652 strings out of 493739
+ 119524 string characters out of 3148819
  214182 words of memory out of 3000000
- 11771 multiletter control sequences out of 15000+200000
+ 11770 multiletter control sequences out of 15000+200000
  13138 words of font info for 38 fonts, out of 3000000 for 9000
  714 hyphenation exceptions out of 8191
  50i,11n,42p,994b,451s stack positions out of 5000i,500n,10000p,200000b,50000s
 
-Output written on dpl1_utf8.dvi (18 pages, 79308 bytes).
+Output written on dpl1_utf8.dvi (18 pages, 77736 bytes).
