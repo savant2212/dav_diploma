@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.1415926-1.40.11 (TeX Live 2010/Arch Linux) (format=latex 2010.11.11)  26 NOV 2010 00:30
+This is pdfTeX, Version 3.1415926-1.40.11 (TeX Live 2010/Arch Linux) (format=latex 2010.11.11)  26 NOV 2010 17:10
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1077,12 +1077,9 @@ LaTeX Info: Redefining \nameref on input line 41.
 \@outlinefile=\write3
 \openout3 = `dpl1_utf8.out'.
 
-
-
-Package hyperref Warning: Rerun to get /PageLabels entry.
-
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: End \AtBeginDocument code.
+
 *geometry* driver: auto-detecting
 *geometry* detected driver: dvips
 *geometry* verbose mode - [ preamble ] result:
@@ -1184,49 +1181,55 @@ File: pictures/org_struct.eps Graphic file (type eps)
 [8
 
 ]
-Overfull \hbox (3.84099pt too wide) in paragraph at lines 124--127
+Overfull \hbox (3.84099pt too wide) in paragraph at lines 123--126
 []\T2A/ftm/m//12 ќсновной функ^^?ци^^?ей двор^^?ца €в^^?л€^^?ет^^?с€ ока^^?за^^
 ?ние об^^?ра^^?зо^^?ва^^?тель^^?ных и вос^^?пи^^?та^^?тель^^?ных услуг,
  []
 
-[9] [10] [11] [12] [13]
-File: pictures/DB.eps Graphic file (type eps)
- <pictures/DB.eps> [14
 
-]
+Overfull \hbox (3.84099pt too wide) in paragraph at lines 128--130
+[]\T2A/ftm/m//12 ќсновной функ^^?ци^^?ей двор^^?ца €в^^?л€^^?ет^^?с€ ока^^?за^^
+?ние об^^?ра^^?зо^^?ва^^?тель^^?ных и вос^^?пи^^?та^^?тель^^?ных услуг,
+ []
+
+[9] [10] [11] [12] [13] [14]
+File: pictures/DB.eps Graphic file (type eps)
+ <pictures/DB.eps>
 File: pictures/client_sequencs.eps Graphic file (type eps)
  <pictures/client_sequencs.eps>
-[15]
-File: pictures/davstorage.eps Graphic file (type eps)
- <pictures/davstorage.eps> [16] [17] [18
+[15
 
-] [19
+]
+File: pictures/davstorage.eps Graphic file (type eps)
+ <pictures/davstorage.eps> [16] [17] [18] [19
 
 ] [20
 
-]
-AED: lastpage setting LastPage 
-[21
+] [21
 
 ]
-Package atveryend Info: Empty hook `BeforeClearDocument' on input line 333.
-Package atveryend Info: Empty hook `AfterLastShipout' on input line 333.
+AED: lastpage setting LastPage 
+[22
+
+]
+Package atveryend Info: Empty hook `BeforeClearDocument' on input line 309.
+Package atveryend Info: Empty hook `AfterLastShipout' on input line 309.
  (./dpl1_utf8.aux)
-Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 333.
+Package atveryend Info: Executing hook `AtVeryEndDocument' on input line 309.
 Package rerunfilecheck Info: File `dpl1_utf8.out' has not changed.
-(rerunfilecheck)             Checksum: 198BB6956318CAC32F082BDD6450AD4F;11901.
+(rerunfilecheck)             Checksum: E167AB69CCE0107E73ECF3339F511571;11989.
 
 
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
  ) 
 Here is how much of TeX's memory you used:
- 8660 strings out of 493739
- 119685 string characters out of 3148819
- 214709 words of memory out of 3000000
- 11776 multiletter control sequences out of 15000+200000
+ 8661 strings out of 493739
+ 119704 string characters out of 3148819
+ 215080 words of memory out of 3000000
+ 11777 multiletter control sequences out of 15000+200000
  13138 words of font info for 38 fonts, out of 3000000 for 9000
  714 hyphenation exceptions out of 8191
- 50i,11n,42p,994b,451s stack positions out of 5000i,500n,10000p,200000b,50000s
+ 50i,11n,42p,1146b,451s stack positions out of 5000i,500n,10000p,200000b,50000s
 
-Output written on dpl1_utf8.dvi (21 pages, 89248 bytes).
+Output written on dpl1_utf8.dvi (22 pages, 95920 bytes).
