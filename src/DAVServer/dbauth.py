@@ -27,6 +27,8 @@ from actions import actions
 from DAV.WebDAVServer import DAVRequestHandler
 import string
 from DAV.errors import DAV_Error
+from Entity import audit
+import time
 
 class DbAuthHandler(DAVRequestHandler):
     
@@ -77,11 +79,21 @@ class DbAuthHandler(DAVRequestHandler):
             
         
         #check restrict for user
-        result = sess.query(ActionRestrict).filter_by(actor_id=user.id, object_id=obj.id, actor_type='1').first()
+        result = sess.query(ActionRestrict).filter_by(actor_id=user.id, object_id=obj.id).first()
         
         if result != None:
             sess.close()
-            return {True: 1, False: 0}[result.action & actions[command] != 0]            
+            
+            if result.action & actions[command] != 0 :
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = True)
+                sess.connection().execute(ins)
+                sess.commit()
+                return 1
+            else:
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = False)
+                sess.connection().execute(ins)
+                sess.commit()
+                return 0            
         
         actors=[]
         for grp in user.groups :
@@ -95,8 +107,16 @@ class DbAuthHandler(DAVRequestHandler):
             for r in result:
                 rs = rs | r.action 
             
-            return {True: 1, False: 0}[rs & actions[command] != 0]
-               
+            if rs & actions[command] != 0 :
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = True)
+                sess.connection().execute(ins)
+                sess.commit()
+                return 1
+            else:
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time='', action = actions[command], result = False)
+                sess.connection().execute(ins)
+                sess.commit()
+                return 0   
         
         return None
         
