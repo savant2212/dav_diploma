@@ -69,6 +69,23 @@ def parse_propfind(xml_doc):
 
     return request_type,props,namespaces
 
+def parse_proppatch(xml_doc):
+    set_props=[]
+    rm_props=[]
+    
+    doc = minidom.parseString(xml_doc)
+    
+    for pu in doc.getElementsByTagNameNS("DAV:", "propertyupdate"):
+        for upd in pu:
+            for set in upd.getElementsByTagNameNS("set"):
+                                 
+                pass
+            
+            for rm in upd.getElementsByTagNameNS("remove"):
+                pass
+    
+    return set_props, rm_props 
+    
 
 def create_treelist(dataclass,uri):
     """ create a list of resources out of a tree 

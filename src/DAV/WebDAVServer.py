@@ -33,6 +33,7 @@ from report import REPORT
 from delete import DELETE
 from davcopy import COPY
 from davmove import MOVE
+from proppatch import PROPPATCH
 
 from utils import rfc1123_date, IfParser, tokenFinder
 from string import atoi,split
@@ -718,3 +719,38 @@ class DAVRequestHandler(AuthServer.BufferedAuthRequestHandler, LockManager):
         AuthServer.BufferedAuthRequestHandler.log_message(self, 
             *tuple(('- %s - ' + args[0],) + (self.headers.get('User-Agent', '?'),) + args[1:])
         )
+    
+    def do_PROPPATCH(self):
+        #need lock
+        
+        dc = self.IFACE_CLASS
+
+        # read the body containing the xml request
+        # iff there is no body then this is an ALLPROP request
+        body = None
+        if self.headers.has_key('Content-Length'):
+            l = self.headers['Content-Length']
+            body = self.rfile.read(atoi(l))
+
+        uri = urlparse.urljoin(self.get_baseuri(dc), self.path)
+        uri = urllib.unquote(uri)
+
+        pf = PROPPATCH(uri, dc, self.headers.get('Depth', 'infinity'), body)
+
+        try:
+            DATA = '%s\n' % pf.createResponse()
+        except DAV_Error, (ec,dd):
+            return self.send_status(ec)
+
+        # work around MSIE DAV bug for creation and modified date
+        # taken from Resource.py @ Zope webdav
+        if (self.headers.get('User-Agent') ==
+            'Microsoft Data Access Internet Publishing Provider DAV 1.1'):
+            DATA = DATA.replace('<ns0:getlastmodified xmlns:ns0="DAV:">',
+                                    '<ns0:getlastmodified xmlns:n="DAV:" xmlns:b="urn:uuid:c2f41010-65b3-11d1-a29f-00aa00c14882/" b:dt="dateTime.rfc1123">')
+            DATA = DATA.replace('<ns0:creationdate xmlns:ns0="DAV:">',
+                                    '<ns0:creationdate xmlns:n="DAV:" xmlns:b="urn:uuid:c2f41010-65b3-11d1-a29f-00aa00c14882/" b:dt="dateTime.tz">')
+
+        self.send_body_chunks_if_http11(DATA, '207','Multi-Status','Multiple responses')
+        
+        pass
