@@ -76,13 +76,20 @@ def parse_proppatch(xml_doc):
     doc = minidom.parseString(xml_doc)
     
     for pu in doc.getElementsByTagNameNS("DAV:", "propertyupdate"):
-        for upd in pu:
-            for set in upd.getElementsByTagNameNS("set"):
-                                 
-                pass
+        for upd in pu.childNodes:
             
-            for rm in upd.getElementsByTagNameNS("remove"):
-                pass
+            if upd.localName == "set":
+                for prop in upd.childNodes:
+                    for item in prop.childNodes:
+                        if item.childNodes.length == 0:
+                            set_props.append([item.localName, None])
+                        else :
+                            set_props.append([item.localName, item.childNodes[0].nodeValue])
+            elif upd.localName == "remove":
+                for prop in upd.childNodes:
+                    for item in prop.childNodes:
+                        rm_props.append([item.localName, item.nodeValue])
+                
     
     return set_props, rm_props 
     

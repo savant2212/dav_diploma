@@ -16,6 +16,7 @@
 #MA 02111-1307, USA
 
 import xml.dom.minidom
+from DAV.constants import HTTP_STATUS_LINES
 domimpl = xml.dom.minidom.getDOMImplementation()
 
 import logging
@@ -36,25 +37,80 @@ class PROPPATCH:
     classdocs
     '''
 
-    def __init__(self,uri,dataclass,depth, body):
+    def __init__(self,uri,dataclass, body):
         '''
         Constructor
         '''
-        self.request_type=None
         self.nsmap={}
-        self.proplist={}
+        self.set_props={}
+        self.rm_props={}
         self.default_ns=None
         self._dataclass=dataclass
-        self._depth=str(depth)
+        
         self._uri=uri#.rstrip('/')
         self._has_body=None    # did we parse a body?
 
         if dataclass.verbose:
-            log.info('PROPPATCH: Depth is %s, URI is %s' % (depth, uri))
+            log.info('PROPPATCH: URI is %s' % (uri))
 
         if body:
-            self.request_type, self.proplist, self.namespaces = utils.parse_propfind(body)
+            self.set_props, self.rm_props = utils.parse_proppatch(body)
             self._has_body = True
             
     def createResponse(self):
-        pass    
+        dc=self._dataclass
+        # create the document generator
+        doc = domimpl.createDocument(None, "multistatus", None)
+        ms = doc.documentElement
+        ms.setAttribute("xmlns:D", "DAV:")
+        ms.tagName = 'D:multistatus'
+        
+        re=doc.createElement("D:response")
+        
+        uparts=urlparse.urlparse(self._uri)
+        fileloc=uparts[2]
+        href=doc.createElement("D:href")
+        huri=doc.createTextNode(uparts[0]+'://'+'/'.join(uparts[1:2]) + urllib.quote(fileloc))
+        href.appendChild(huri)
+        re.appendChild(href)
+ 
+        for name, value in self.set_props:
+            ps=doc.createElement("D:propstat")
+            # write prop element
+            pr=doc.createElement("D:prop")
+            attr = doc.createElement(name)
+            status = doc.createElement('D:status')
+            pr.appendChild(attr)
+            
+            ret = self._dataclass.set_attr(self._uri, name, value)
+            
+            status.appendChild(doc.createTextNode(HTTP_STATUS_LINES[ret]))
+            
+            ps.appendChild(pr)
+            ps.appendChild(status)
+            re.appendChild(ps)           
+            
+        for item in self.rm_props:
+            ps=doc.createElement("D:propstat")
+            pr=doc.createElement("D:prop")
+            attr = doc.createElement(name)
+            status = doc.createElement('D:status')
+            pr.appendChild(attr)
+            
+            ret = self._dataclass.rm_attr(self._uri, name)
+            
+            status.appendChild(doc.createTextNode(HTTP_STATUS_LINES[ret]))  
+            
+            ps.appendChild(pr)
+            ps.appendChild(status)
+            re.appendChild(ps)        
+        
+        ms.appendChild(re)
+        
+        return doc.toxml(encoding="utf-8") 
+    
+    def set_response(self):
+        pass
+    
+    def rm_response(self):
+        pass       

@@ -43,7 +43,7 @@ from sqlalchemy.orm import mapper, sessionmaker, relationship
 import DAVServer
 from base64 import b64decode
 from Entity import ActionRestrict, User, TreeObject, Content, Group, Base,\
-    ObjectRevision
+    ObjectRevision, ObjectProperty
 from datetime import datetime
 from actions import *
 
@@ -109,24 +109,23 @@ class DBFSHandler(dav_interface):
             
             #add root group and subgroup. for test
             grp_base_dir= TreeObject("root_grp",TreeObject.TYPE_COLLECTION,root_element,0,0,0,0,'/root_grp/')
-            hist        = TreeObject(".history",TreeObject.TYPE_COLLECTION,grp_base_dir,0,0,0,0,string.join([grp_base_dir.path[:-1],".history",''],'/'))
             
             sess.add(grp_base_dir)
-            sess.add(hist)
             
             sess.commit()
             
             sess.add(ActionRestrict(root.id, 1, grp_base_dir.id, actions['ALL']))
-            sess.add(ActionRestrict(root.id, 1, hist.id, user_hist_acts))
             sess.add(ActionRestrict(toor.id, 1, grp_base_dir.id, actions['ALL']))
-            sess.add(ActionRestrict(toor.id, 1, hist.id, user_hist_acts))
             
             grp = Group("root_grp",grp_base_dir)
-        
+            
             grp.users.append(root)
             grp.users.append(toor)
             
             sess.add(grp)
+            sess.commit()
+            
+            sess.add(ActionRestrict(root.id, 1, grp.id, actions['ALL'], 2))
             sess.commit()
             
             sess.close()
@@ -346,40 +345,74 @@ class DBFSHandler(dav_interface):
             sess.commit()
         
         obj.mod_time = time.time()
+        
+        try:
+            prop = filter(lambda pr: pr, obj.properties)[0]            
+        except IndexError:
+            prop = None
+        
         old_rev = obj.last_revision
-        rev = ObjectRevision()
-        rev.mod_time = obj.mod_time
         
-        if old_rev == None:
-            rev.revision = 1            
-        else:
-            hist = self.uri2obj(string.join([parent.path[:-1],".history",""],'/'), sess)
-            rev.revision = old_rev.revision + 1           
+        if prop != None:
+            rev = ObjectRevision()
+            rev.mod_time = obj.mod_time
+        
+            if old_rev == None:
+                rev.revision = 1            
+            else:
+                hist = self.uri2obj(string.join([parent.path[:-1],".history",""],'/'), sess)
+                rev.revision = old_rev.revision + 1           
+                
+                if hist != None:
+                    prev_rev = ObjectRevision()
+                    prev_rev.content = old_rev.content
+                    prev_rev.revision = old_rev.revision
+                    prev_rev.mod_time = old_rev.mod_time
+                    
+                    prev_name = "%s_%s" % (name, datetime.fromtimestamp(old_rev.mod_time).strftime("%Y-%m-%d-%H-%M-%S"))    
+                    prev = TreeObject(prev_name,TreeObject.TYPE_REV_FILE,hist,self.User.id,None,0,0,string.join([hist.path[:-1],prev_name],'/'))
+                    
+                    sess.add(prev)
+                    prev.revisions.append(prev_rev)                
+                    
+                    sess.commit() 
+                    rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=hist.id )       
+                    sess.add(ActionRestrict(self.User.id, '1', prev.id, user_hist_acts ))
+                    
+                    sess.commit()
+        else :
+            rev = old_rev;           
             
-            if hist != None:
-                prev_rev = ObjectRevision()
-                prev_rev.content = old_rev.content
-                prev_rev.revision = old_rev.revision
-                prev_rev.mod_time = old_rev.mod_time
-                
-                prev_name = "%s_%s" % (name, datetime.fromtimestamp(old_rev.mod_time).strftime("%Y-%m-%d-%H-%M-%S"))    
-                prev = TreeObject(prev_name,TreeObject.TYPE_REV_FILE,hist,self.User.id,None,0,0,string.join([hist.path[:-1],prev_name],'/'))
-                
-                sess.add(prev)
-                prev.revisions.append(prev_rev)                
-                
-                sess.commit() 
-                rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=hist.id )       
-                sess.add(ActionRestrict(self.User.id, '1', prev.id, user_hist_acts ))
-                
-                sess.commit()
-        
         rev.content = Content(base64.b64encode(data), content_type) 
         
         obj.revisions.append(rev)                
         
         sess.add(obj)        
         sess.commit()
+        sess.close()
+
+    def mkhist(self, uri):
+        if self.User == None:
+            raise DAV_Error
+        
+        sess = self.Session()
+        self.User = sess.merge(self.User)
+        
+        path = urlparse.urlparse(uri)[2]
+        
+        obj = self.uri2obj(uri, sess)
+        
+        rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=obj.id )        
+        hist = TreeObject(".history",TreeObject.TYPE_COLLECTION,obj,self.User.id,obj.group,0,0,string.join([path,".history"],'/')) 
+        
+        sess.add(hist)
+        sess.commit()
+        
+        for r in rest:
+            sess.add(ActionRestrict(self.User.id, r.actor_type, hist.id, r.action | actions['HISTORY'] ))
+        
+        sess.commit()
+        
         sess.close()
 
     def mkcol(self,uri):
@@ -411,10 +444,7 @@ class DBFSHandler(dav_interface):
         else:                
             obj = TreeObject(name,TreeObject.TYPE_COLLECTION,parent,self.User.id,self.User.groups[0].id,0,0,path)      
         
-        hist = TreeObject(".history",TreeObject.TYPE_COLLECTION,obj,self.User.id,obj.group,0,0,string.join([path,".history"],'/'))
-        
-        sess.add(obj)        
-        sess.add(hist)
+        sess.add(obj)
         
         if parent_path=='/':
             self.User.directories.append(obj)        
@@ -426,7 +456,7 @@ class DBFSHandler(dav_interface):
         else:
             for r in rest:
                 sess.add(ActionRestrict(self.User.id, r.actor_type, obj.id, r.action ))
-                sess.add(ActionRestrict(self.User.id, r.actor_type, hist.id, r.action | actions['HISTORY'] ))
+        #        
             
         sess.commit()        
 
@@ -577,4 +607,92 @@ class DBFSHandler(dav_interface):
         
         sess.close()
         
+        
         return filelist
+    
+    def set_attr(self, uri, name, value):
+        sess = self.Session()       
+        obj = self.uri2obj(uri,sess)
+        
+        if obj == None:
+            sess.close()
+            return 404
+        try:
+            prop = filter(lambda prop: prop.name == name, obj.properties)[0]            
+            prop.value = value
+        except IndexError:
+            obj.properties.append(ObjectProperty(name, value, obj));
+        
+        sess.add(obj)
+        sess.commit()
+        
+        sess.close()
+        mname="_set_dav_"+name
+        try:
+            m=getattr(self,mname)
+            r=m(uri, value)
+            return r
+        except AttributeError:
+            return 200 
+        
+        return 200
+    
+    def _set_dav_history(self, uri, value):
+        sess = self.Session()       
+        obj = self.uri2obj(uri,sess)
+        
+        if obj.type != TreeObject.TYPE_COLLECTION :            
+            sess.close()
+            return 409
+        
+        try:
+            prop = filter(lambda r: r.name == ".history" !=0, obj.nodes)[0]
+            if prop != None:
+                sess.close()
+                return 200            
+        except IndexError:
+            pass    
+        
+        rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=obj.id )
+        
+        try:
+            prop = filter(lambda r: r.action & actions['ADMIN'] !=0, rest)[0]            
+        except IndexError:
+            return 403
+        
+        self.mkhist(uri)
+        return 200
+    
+    def _rm_dav_history(self,uri, name):
+        sess = self.Session()       
+        obj = self.uri2obj(uri,sess)
+        
+        if obj.type != TreeObject.TYPE_COLLECTION :            
+            sess.close()
+            return 409
+        
+        try:
+            prop = filter(lambda r: r.name == "history" !=0, obj.properties)[0]
+            if prop != None:
+                sess.delete(prop)
+                sess.commit()
+                sess.close()
+                return 200            
+        except IndexError:
+            return 404    
+        
+        return 200
+    
+    def _get_dav_history(self,uri):
+        sess = self.Session()
+        obj = self.uri2obj(uri,sess)
+        
+        try:
+            prop = filter(lambda prop: prop.name == 'history', obj.properties)[0]
+            sess.close()            
+            
+            return prop.value;
+        except IndexError:
+            sess.close()
+            raise AttributeError;
+        

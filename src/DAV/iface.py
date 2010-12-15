@@ -47,7 +47,8 @@ class dav_interface:
                      'lockdiscovery',
                      'resourcetype',
                      'source',
-                     'supportedlock'),
+                     'supportedlock',
+                     'history'),
            "NS2" : ("p1","p2")
            }
 
@@ -296,3 +297,8 @@ class dav_interface:
         """ return 1 or None depending on if a resource is a collection """
         return None # no
 
+    def set_attr(self, uri, name, value):
+        return 501
+    
+    def rm_attr(self, uri, name):
+        return 501
