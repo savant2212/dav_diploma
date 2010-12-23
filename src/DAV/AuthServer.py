@@ -14,6 +14,7 @@
 #License along with this library; if not, write to the Free
 #Software Foundation, Inc., 59 Temple Place - Suite 330, Boston,
 #MA 02111-1307, USA
+from _pydev_log import Log
 
 """
     Authenticating HTTP Server
@@ -138,7 +139,8 @@ class AuthRequestHandler:
                         self.send_autherror(401,"Authorization Required"); return
                     if not self.get_command_allow(user,command ):
                         self.send_response(403,"Forbidden"); return
-                except:    
+                except Exception as inst:
+                    print(inst)    
                     self.send_response(500, 'Invalid action')
             except:
                 self.send_autherror(401,"Authorization Required")

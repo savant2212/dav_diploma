@@ -304,7 +304,7 @@ class DBFSHandler(dav_interface):
         else:
             return content.mime_type
 
-    def put(self, uri, data, content_type=None):
+    def put(self, uri, data, content_type='application/octet-stream'):
         """ put the object into the filesystem """
         if self.User == None:
             raise DAV_Error( 401 )
@@ -352,7 +352,7 @@ class DBFSHandler(dav_interface):
             prop = None
         
         old_rev = obj.last_revision
-        
+        #obj.revisions
         if prop != None:
             rev = ObjectRevision()
             rev.mod_time = obj.mod_time
@@ -381,7 +381,14 @@ class DBFSHandler(dav_interface):
                     
                     sess.commit()
         else :
-            rev = old_rev;           
+            if old_rev == None:
+                rev = ObjectRevision()
+                rev.mod_time = obj.mod_time
+                rev.revision = 1
+            else:
+                rev = old_rev           
+        if content_type == None:
+            content_type = "application/octet-stream"
             
         rev.content = Content(base64.b64encode(data), content_type) 
         

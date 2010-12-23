@@ -82,17 +82,20 @@ class DbAuthHandler(DAVRequestHandler):
         result = sess.query(ActionRestrict).filter_by(actor_id=user.id, object_id=obj.id).first()
         
         if result != None:
-            sess.close()
-            
+                        
             if result.action & actions[command] != 0 :
-                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = True)
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = 1)
+                ins.compile()
                 sess.connection().execute(ins)
                 sess.commit()
+                sess.close()
                 return 1
             else:
-                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = False)
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = 0)
+                ins.compile()
                 sess.connection().execute(ins)
                 sess.commit()
+                sess.close()
                 return 0            
         
         actors=[]
@@ -101,21 +104,25 @@ class DbAuthHandler(DAVRequestHandler):
         
         result = sess.query(ActionRestrict).filter_by(actor_id=actors, object_id=obj.id, actor_type='2')
         
-        sess.close()
+        #sess.close()
         rs=0
         if result != None:
             for r in result:
                 rs = rs | r.action 
             
             if rs & actions[command] != 0 :
-                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = True)
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time=time.time(), action = actions[command], result = 1)
+                ins.compile()
                 sess.connection().execute(ins)
                 sess.commit()
+                sess.close()
                 return 1
             else:
-                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time='', action = actions[command], result = False)
+                ins = audit.insert().values(user_id=user.id, object_id=obj.id, action_time='', action = actions[command], result = 0)
+                ins.compile()
                 sess.connection().execute(ins)
                 sess.commit()
+                sess.close()
                 return 0   
         
         return None

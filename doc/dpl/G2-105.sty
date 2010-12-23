@@ -16,7 +16,7 @@
 %  leqno.clo    формулы правильно
 %  caption2     оформление заголовков риснуков и таблиц
 %  icomma       запятая в формулах
-%  longtable    многостраничные таблицы
+%  long    многостраничные таблицы
 
 \ProvidesPackage{G2-105}[2003/07/07 v1.00 General reqs. GOST 2.105-95]
 \NeedsTeXFormat{LaTeX2e}
@@ -288,7 +288,7 @@
 
 \newcommand\eqref[1]{\ref{#1}}
 \def\@eqnnum{{\normalfont\normalcolor\theequation}}
-\newenvironment{table} {\@float   {table}}{\end@float   }
+\newenvironment{table} {\@float {table}}{\end@float }
 \newenvironment{table*}{\@dblfloat{table}}{\end@dblfloat}
 \renewcommand{\theequation}{(\arabic{equation})}%
 \newlength\Gost@EqRemLen

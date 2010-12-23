@@ -76,7 +76,9 @@ def runserver(
 
       # dispatch directory and host to the filesystem handler
     # This handler is responsible from where to take the data
-    handler.IFACE_CLASS = DBFSHandler('sqlite:///%s/db/devel.db' % (os.getcwd()), 'http://%s:%s/' % (host, port), verbose )
+    #handler.IFACE_CLASS = DBFSHandler('sqlite:///%s/db/devel.db' % (os.getcwd()), 'http://%s:%s/' % (host, port), verbose )
+    handler.IFACE_CLASS = DBFSHandler('postgres://davstorage:davstorage@localhost/davstorage', 'http://%s:%s/' % (host, port), verbose )
+    
     handler.IFACE_CLASS.setup()
     # put some extra vars
     handler.verbose = verbose
