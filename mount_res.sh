@@ -8,7 +8,7 @@ login=`zenity --entry \
 	--text="Введите имя пользователя:"`
 	      
 if [ login = "" ]; then
-      	echo "Имя пользователя не введено"
+      	zenity --error  --text="Имя пользователя не введено"
       	exit 1
 fi
 
@@ -18,7 +18,7 @@ password=`zenity --entry \
 	--hide-text`
 	
 if [ password = "" ]; then
-      	echo "Пароль не введён"
+      	zenity --error  --text="Пароль не введён"
       	exit 1
 fi
 
@@ -38,5 +38,12 @@ chmod 600 $CONF_FILE
 echo "secrets $SECRET_FILE" > $CONF_FILE
 
 /home/savant/devel/mount.davfs $1 $2 -oconf=$CONF_FILE
+RET=$?
+
+if [ "$RET" == "11" ]; then
+	zenity --error  --text="Сервер недоступен. Обратитесь к системному администратору."
+elif [ "$RET" != 0 ]; then
+	zenity --error  --text="Неправильное имя пользователя или пароль"
+fi
 
 rm -f $CONF_FILE $SECRET_FILE

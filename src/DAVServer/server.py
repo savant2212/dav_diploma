@@ -65,19 +65,25 @@ def runserver(
          user = '',
          password = '',
          handler = DbAuthHandler,
+         directory = "/tmp/davstorage",
          server = ThreadedHTTPServer):
 
+    directory = directory.strip()
+    directory = directory.rstrip('/')
     host = host.strip()
 
+    if not os.path.isdir(directory):
+        log.error("%s is not a valid directory")
+        return 233
     # basic checks against wrong hosts
     if host.find('/') != -1 or host.find(':') != -1:
         log.error('Malformed host %s' % host)
         return sys.exit(233)
 
-      # dispatch directory and host to the filesystem handler
+    # dispatch directory and host to the filesystem handler
     # This handler is responsible from where to take the data
     #handler.IFACE_CLASS = DBFSHandler('sqlite:///%s/db/devel.db' % (os.getcwd()), 'http://%s:%s/' % (host, port), verbose )
-    handler.IFACE_CLASS = DBFSHandler('postgres://davstorage:davstorage@localhost/davstorage', 'http://%s:%s/' % (host, port), verbose )
+    handler.IFACE_CLASS = DBFSHandler('postgres://davstorage:davstorage@localhost/davstorage', 'http://%s:%s/' % (host, port), directory, verbose )
     
     handler.IFACE_CLASS.setup()
     # put some extra vars

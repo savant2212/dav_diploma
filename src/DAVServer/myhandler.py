@@ -59,6 +59,32 @@ try:
 except ImportError:
     pass
 
+class Resource(object):
+    # XXX this class is ugly
+    def __init__(self, fp, file_size):
+        self.__fp = fp
+        self.__file_size = file_size
+
+    def __len__(self):
+        return self.__file_size
+
+    def __iter__(self):
+        while 1:
+            data = self.__fp.read(BUFFER_SIZE)
+            if not data:
+                break
+            yield data
+            time.sleep(0.005)
+        self.__fp.close()
+
+    def read(self, length = 0):
+        if length == 0:
+            length = self.__file_size
+
+        data = self.__fp.read(length)
+        return data
+        
+
 class DBFSHandler(dav_interface):
     """ 
     Model a filesystem for DAV
@@ -73,11 +99,12 @@ class DBFSHandler(dav_interface):
     
     
     
-    def __init__(self, connection_string, uri, verbose=False):
+    def __init__(self, connection_string, uri, directory, verbose=False):
         self.setEngine(connection_string)
         self.setBaseURI(uri)
         # should we be verbose?
         self.verbose = verbose
+        self.setDirectory(directory)
         log.info('Initialized with %s' % (uri))
 
     def setup(self):
@@ -129,7 +156,15 @@ class DBFSHandler(dav_interface):
             sess.commit()
             
             sess.close()
+    
+    def setDirectory(self, path):
+        """ Sets the directory """
 
+        if not os.path.isdir(path):
+            raise Exception, '%s not must be a directory!' % path
+
+        self.directory = path
+    
     def setEngine(self, connection_string):
         """ Set sqlalchemy engine"""
         
@@ -229,24 +264,60 @@ class DBFSHandler(dav_interface):
         sess = self.Session()
         obj=self.uri2obj(uri, sess)
         print("getdata call\n")
-        if obj.type == TreeObject.TYPE_FILE or obj.type == TreeObject.TYPE_REV_FILE:            
+        if obj.type == TreeObject.TYPE_FILE or obj.type == TreeObject.TYPE_REV_FILE:
+            rev = obj.last_revision
+            if rev == None :
+                sess.close()
+                raise DAV_Error
             
-            content = obj.last_revision
-            
-            data = base64.b64decode(content.content.content)
-            print("data recv: %s\n"%(data))
-            sess.close()
-            
-            if range == None:
-                return data 
+            path = "%s/%s" % (self.directory, rev.content.content)
+        
+        if os.path.exists(path):
+            if os.path.isfile(path):
+                file_size = os.path.getsize(path)
+                if range == None:
+                    fp=open(path,"r")
+                    log.info('Serving content of %s' % uri)
+                    return Resource(fp, file_size)
+                else:
+                    if range[1] == '':
+                        range[1] = file_size
+                    else:
+                        range[1] = int(range[1])
+
+                    if range[0] == '':
+                        range[0] = file_size - range[1]
+                    else:
+                        range[0] = int(range[0])
+
+                    if range[0] > file_size:
+                        raise DAV_Requested_Range_Not_Satisfiable
+
+                    if range[1] > file_size:
+                        range[1] = file_size
+
+                    fp=open(path,"r")
+                    fp.seek(range[0])
+                    log.info('Serving range %s -> %s content of %s' % (range[0], range[1], uri))
+                    sess.close()
+                    return Resource(fp, range[1] - range[0])
             else:
-                raise NotImplementedError
+                # also raise an error for collections
+                # don't know what should happen then..
+                log.info('get_data: %s not found' % path)
         
         sess.close()
         
         raise DAV_Error
 
-
+#            data = base64.b64decode(rev.content.content)
+#            print("data recv: %s\n"%(data))
+#            sess.close()
+#            
+#            if range == None:
+#                return data 
+#            else:
+#                raise NotImplementedError
 
     def _get_dav_resourcetype(self,uri):
         """ return type of object """        
@@ -267,12 +338,14 @@ class DBFSHandler(dav_interface):
         """ return the content length of an object """
         sess=self.Session()
         obj=self.uri2obj(uri, sess)  
-        if obj.type == TreeObject.TYPE_FILE:                  
-            content = obj.last_revision            
-            data = base64.b64decode(content.content.content)
+        if obj.type == TreeObject.TYPE_FILE:
+            path = "%s/%s" % (self.directory, "%s_%i_%i" % (obj.name, obj.id, obj.last_revision.revision))
             sess.close()
-            return data.length
-        
+            if os.path.exists(path):
+                if os.path.isfile(path):
+                    s=os.stat(path)
+                    return str(s[6])
+
         return '0'
 
     def get_lastmodified(self,uri):
@@ -295,14 +368,14 @@ class DBFSHandler(dav_interface):
         sess=self.Session()
         
         obj=self.uri2obj(uri, sess)        
-        content = obj.last_revision
+        rev = obj.last_revision
         
-        sess.close()
-        
-        if content.mime_type == '':
+        if rev.content.mime_type == '':
+            sess.close()
             return 'application/octet-stream'
         else:
-            return content.mime_type
+            sess.close()
+            return rev.content.mime_type
 
     def put(self, uri, data, content_type='application/octet-stream'):
         """ put the object into the filesystem """
@@ -347,7 +420,7 @@ class DBFSHandler(dav_interface):
         obj.mod_time = time.time()
         
         try:
-            prop = filter(lambda pr: pr, obj.properties)[0]            
+            prop = filter(lambda pr: pr, parent.properties)[0]            
         except IndexError:
             prop = None
         
@@ -360,17 +433,21 @@ class DBFSHandler(dav_interface):
             if old_rev == None:
                 rev.revision = 1            
             else:
-                hist = self.uri2obj(string.join([parent.path[:-1],".history",""],'/'), sess)
-                rev.revision = old_rev.revision + 1           
+                hist = self.uri2obj(string.join([parent.path[:-1],".history",""],'/'), sess)                           
                 
-                if hist != None:
+                if hist != None:                    
                     prev_rev = ObjectRevision()
                     prev_rev.content = old_rev.content
                     prev_rev.revision = old_rev.revision
                     prev_rev.mod_time = old_rev.mod_time
+                    rev.revision = old_rev.revision + 1
                     
                     prev_name = "%s_%s" % (name, datetime.fromtimestamp(old_rev.mod_time).strftime("%Y-%m-%d-%H-%M-%S"))    
                     prev = TreeObject(prev_name,TreeObject.TYPE_REV_FILE,hist,self.User.id,None,0,0,string.join([hist.path[:-1],prev_name],'/'))
+#                    prev_file_path = "%s_%i_%i" % (name, obj.id, prev_rev.revision)
+#                    prev_file_link = "%s_%i_%i" % (prev_name, obj.id, prev_rev.revision)
+#                    
+#                    os.symlink(prev_file_path, prev_file_link)
                     
                     sess.add(prev)
                     prev.revisions.append(prev_rev)                
@@ -389,8 +466,27 @@ class DBFSHandler(dav_interface):
                 rev = old_rev           
         if content_type == None:
             content_type = "application/octet-stream"
-            
-        rev.content = Content(base64.b64encode(data), content_type) 
+        
+        if obj.id != None:
+            file_path = "%s_%i_%i" % (name, obj.id, rev.revision)
+        else:
+            file_path = "%s_1_%i" % (name, rev.revision)
+        
+        try:
+            fp=open("%s/%s" % (self.directory, file_path), "w+")
+            if isinstance(data, types.GeneratorType):
+                for d in data:
+                    fp.write(d)
+            else:
+                if data:
+                    fp.write(data)
+            fp.close()
+            log.info('put: Created %s' % uri)
+        except:
+            log.info('put: Could not create %s' % uri)
+            raise DAV_Error, 424
+        
+        rev.content = Content(file_path, content_type) 
         
         obj.revisions.append(rev)                
         
@@ -405,12 +501,12 @@ class DBFSHandler(dav_interface):
         sess = self.Session()
         self.User = sess.merge(self.User)
         
-        path = urlparse.urlparse(uri)[2]
+        path = urlparse.urlparse(uri)[2][:-1]
         
         obj = self.uri2obj(uri, sess)
         
         rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=obj.id )        
-        hist = TreeObject(".history",TreeObject.TYPE_COLLECTION,obj,self.User.id,obj.group,0,0,string.join([path,".history"],'/')) 
+        hist = TreeObject(".history",TreeObject.TYPE_COLLECTION,obj,self.User.id,obj.group,0,0,string.join([path,".history",""],'/')) 
         
         sess.add(hist)
         sess.commit()
