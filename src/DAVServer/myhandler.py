@@ -46,6 +46,7 @@ from Entity import ActionRestrict, User, TreeObject, Content, Group, Base,\
     ObjectRevision, ObjectProperty
 from datetime import datetime
 from actions import *
+import hashlib
 
 
 log = logging.getLogger(__name__)
@@ -117,9 +118,11 @@ class DBFSHandler(dav_interface):
             #create default objects
                        
             #default user
-            root=User('root', 'root', 'root')            
+            
+            
+            root=User('root', hashlib.sha256('root').hexdigest(), 'root')            
             sess.add(root)
-            toor=User('toor', 'toor', 'toor')            
+            toor=User('toor', hashlib.sha256('toor').hexdigest(), 'toor')            
             sess.add(toor)
             sess.commit()
             
@@ -655,11 +658,98 @@ class DBFSHandler(dav_interface):
 
     def copy(self,src,dst):
         """ copy a resource from src to dst """
+        if self.User == None:
+            raise DAV_Error( 401 )
+        
         sess=self.Session()
         source = self.uri2obj(src, sess)
-        content = source.last_revision
+        destination = self.uri2obj(dst, sess)
         
-        self.put(dst, b64decode(content.content), content.mime_type)
+        if destination == None :
+            path = urlparse.urlparse(destination)[2]
+            path_array = path.split('/')
+            name = path_array[-1]
+            parent_path = string.join(path_array[:-1],'/')+'/'
+            if parent_path == '':            
+                raise DAV_Forbidden
+            
+            parent = sess.query(TreeObject).filter_by(path=parent_path).first()
+    
+            if parent == None :
+                raise DAV_Error
+
+            if self.User.groups == []:
+                destination = TreeObject(name,TreeObject.TYPE_FILE,parent,self.User.id,None,0,0,path)
+            else:                
+                destination = TreeObject(name,TreeObject.TYPE_FILE,parent,self.User.id,self.User.groups[0].id,0,0,path)
+        
+            sess.add(destination)
+            
+            sess.commit()
+            
+            rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=parent.id )
+            
+            for r in rest:
+                sess.add(ActionRestrict(self.User.id, r.actor_type, destination.id, r.action ))
+            
+            rev = ObjectRevision()
+            rev.mod_time = source.mod_time
+            rev.revision = 1
+            rev.content = source.content
+            
+            destination.revisions.append(rev)
+                            
+            sess.commit()
+        else:
+            old_rev = destination.last_revision   
+                     
+            try:
+                prop = filter(lambda pr: pr, destination.properties)[0]            
+            except IndexError:
+                prop = None
+                
+            if prop != None:
+                rev = ObjectRevision()
+                rev.mod_time = source.mod_time
+            
+                if old_rev == None:
+                    rev.revision = 1            
+                else:
+                    hist = self.uri2obj(string.join([destination.path[:-1],".history",""],'/'), sess)                           
+                    
+                    if hist != None:                    
+                        prev_rev = ObjectRevision()
+                        prev_rev.content = old_rev.content
+                        prev_rev.revision = old_rev.revision
+                        prev_rev.mod_time = old_rev.mod_time
+                        rev.revision = old_rev.revision + 1
+                        
+                        prev_name = "%s_%s" % (destination.name, datetime.fromtimestamp(old_rev.mod_time).strftime("%Y-%m-%d-%H-%M-%S"))    
+                        prev = TreeObject(prev_name,TreeObject.TYPE_REV_FILE,hist,self.User.id,None,0,0,string.join([hist.path[:-1],prev_name],'/'))
+                       
+                        sess.add(prev)
+                        prev.revisions.append(prev_rev)                
+                        
+                        sess.commit() 
+                        rest = sess.query(ActionRestrict).filter_by(actor_id=self.User.id, object_id=hist.id )       
+                        sess.add(ActionRestrict(self.User.id, '1', prev.id, user_hist_acts ))
+                        
+                        sess.commit()
+            else :
+                if old_rev == None:
+                    rev = ObjectRevision()
+                    rev.mod_time = source.mod_time
+                    rev.revision = 1
+                else:
+                    rev = old_rev
+            
+            rev.content = source.content
+        
+            destination.revisions.append(rev)                
+            
+            sess.add(destination)        
+            sess.commit()    
+            pass
         sess.close()
         
 

@@ -29,6 +29,7 @@ import string
 from DAV.errors import DAV_Error
 from Entity import audit
 import time
+import hashlib
 
 class DbAuthHandler(DAVRequestHandler):
     
@@ -36,9 +37,9 @@ class DbAuthHandler(DAVRequestHandler):
     def get_userinfo(self,user,pw,command):
         
         sess = self.IFACE_CLASS.Session()
-        print("try to auth")
+        
         #authenticate user
-        user = sess.query(User).filter_by(login=user,password=pw).first()
+        user = sess.query(User).filter_by(login=user,password= hashlib.sha256(pw).hexdigest()).first()
         sess.close()
         
         if user == None:

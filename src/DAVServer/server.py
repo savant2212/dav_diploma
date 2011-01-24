@@ -73,7 +73,7 @@ def runserver(
     host = host.strip()
 
     if not os.path.isdir(directory):
-        log.error("%s is not a valid directory")
+        log.error("%s is not a valid directory" % directory)
         return 233
     # basic checks against wrong hosts
     if host.find('/') != -1 or host.find(':') != -1:
